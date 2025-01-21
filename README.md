@@ -1,0 +1,1 @@
+# Binary Ninja TriCore Extension Architecture Hook
