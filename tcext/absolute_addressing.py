@@ -118,7 +118,7 @@ class LD(ABSForm):
 
         right = il.const_pointer(il.arch.address_size, ea)
 
-        if upper == 1:
+        if upper:
             right = il.load(2, right) # l = 2
             right = il.shift_left(4, right, 0x10)
             right = il.and_expr(4, right, il.const(4, 0xffff0000))
