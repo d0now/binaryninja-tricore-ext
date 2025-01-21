@@ -1,9 +1,10 @@
 from abc import ABC
 
-from binaryninja.architecture import ArchitectureHook, InstructionInfo, InstructionTextToken
+from binaryninja.architecture import InstructionTextToken
 from binaryninja.enums import InstructionTextTokenType
 from binaryninja.lowlevelil import LowLevelILFunction, LLIL_TEMP
-from binaryninja.log import log_warn
+
+from .instruction import Instruction
 
 
 def bits(_data: bytes, length: int, start: int, end: int) -> int:
@@ -12,22 +13,7 @@ def bits(_data: bytes, length: int, start: int, end: int) -> int:
     return (inst >> start) & ((1 << (end - start)) - 1)
 
 
-class Pass(ABC):
-
-    @staticmethod
-    def get_instruction_info(data: bytes, addr: int) -> tuple[list[InstructionTextToken], int]:
-        pass
-
-    @staticmethod
-    def get_instruction_text(data: bytes, addr: int) -> tuple[list[InstructionTextToken], int]:
-        pass
-
-    @staticmethod
-    def get_instruction_low_level_il(data: bytes, addr: int, il: LowLevelILFunction) -> int:
-        pass
-
-
-class ABSFormPass(Pass):
+class ABSForm(Instruction):
 
     @staticmethod
     def decode(data: bytes) -> tuple[int]:
@@ -41,7 +27,7 @@ class ABSFormPass(Pass):
         return o, x, a, ((off18_0_5) | (off18_6_9 << 6) | (off18_10_13 << 10) | (off18_14_17 << 28)) & 0xffffffff
 
 
-class LEA(ABSFormPass):
+class LEA(ABSForm):
 
     @staticmethod
     def get_instruction_text(data, addr):
@@ -59,96 +45,66 @@ class LEA(ABSFormPass):
     def get_instruction_low_level_il(data, addr, il: LowLevelILFunction):
         o, x, a, ea = LEA.decode(data)
         if o == 0xc5 and x == 0x00:
-            il.append(
-                il.set_reg(
-                    il.arch.address_size,
-                    f"a{a}",
-                    il.const(il.arch.address_size, ea)
-                )
-            )
+            il.append(il.set_reg(il.arch.address_size, f"a{a}", il.const(il.arch.address_size, ea)))
             return 4
 
 
-class LD(ABSFormPass):
+class LD(ABSForm):
 
     @staticmethod
     def decode(data):
 
-        o, x, a, ea = ABSFormPass.decode(data)
+        o, x, a, ea = ABSForm.decode(data)
+        b = a >> 1 << 1
+
+        mnemonic = "ld."
+        register = None
+        length = None
+        signed = False
+        upper = False
 
         if o == 0x05:
-            r = 'd'
-            u = x & 1
-            l = 1 if x < 2 else 2
-            q = 0
+            register = (f"d{a}", )
+            signed = not bool(x & 1)
+            length = 1 if x < 2 else 2
+            mnemonic += "b" if length == 1 else "h"
+            mnemonic += "" if signed else "u"
         elif o == 0x45:
-            r = 'd'
-            u = 0
-            l = 2
-            q = 1
+            register = (f"d{a}", )
+            length = 2
+            upper = True
+            mnemonic += "q"
         elif o == 0x85:
-            u = 0
-            l = 8 if x & 1 else 4
-            q = 0
             if x == 0:
-                r = 'd'
+                register = (f"d{a}", )
+                length = 4
+                mnemonic += "w"
             elif x == 1:
-                r = 'e'
+                register = (f"d{b}", f"d{b+1}")
+                length = 8
+                mnemonic += "e"
             elif x == 2:
-                r = 'a'
+                register = (f"a{a}", )
+                length = 4
+                mnemonic += "a"
             elif x == 3:
-                r = 'p'
-        else:
-            raise ValueError(f"Unknown opcode {o} with x-bit {x}")
+                register = (f"a{b}", f"a{b+1}")
+                length = 8
+                mnemonic += "p"
 
-        return o, x, a, ea, r, u, l, q
+        return mnemonic, register, length, signed, upper, ea
     
     @staticmethod
     def get_instruction_text(data, addr):
 
-        try:
-            _, _, a, ea, r, u, l, q = LD.decode(data)
-        except ValueError as exc:
-            log_warn(f"Detected LD instruction but failed to decode: 0x{addr:x}")
-            return None
-
-        if a < 0 or a >= 16:
-            log_warn(f"Detected LD instruction but invalid register selection: 0x{addr:x}, {a}")
-            return None
-
-        mnemonic = "ld"
-        if l == 1:
-            mnemonic += ".b" if u == 0 else ".bu"
-        elif l == 2:
-            if q == 0:
-                mnemonic += ".h" if u == 0 else ".hu"
-            else:
-                mnemonic += ".q"
-        elif l == 4:
-            mnemonic += ".w" if r == 'd' else ".a"
-        elif l == 8:
-            mnemonic += ".e" if r == 'e' else ".dap"
-        else:
-            log_warn(f"Detected LD instruction but failed to fetch mnemonic: 0x{addr:x}")
-            return None
-
-        if r == 'd':
-            reg = f"d{a}"
-        elif r == 'a':
-            reg = f"a{a}"
-        elif r == 'e':
-            b = a >> 1 << 1
-            reg = f"d{b}d{b+1}"
-        elif r == 'p':
-            reg = f"a{b}a{a+1}"
-        else:
-            log_warn(f"Detected LD instruction but failed to fetch operand: 0x{addr:x}")
+        mnemonic, register, length, signed, upper, ea = LD.decode(data)
+        if None in (mnemonic, register, length):
             return None
 
         return [
             InstructionTextToken(InstructionTextTokenType.InstructionToken, mnemonic),
             InstructionTextToken(InstructionTextTokenType.TextToken, " " * (8 - len(mnemonic))),
-            InstructionTextToken(InstructionTextTokenType.RegisterToken, reg),
+            InstructionTextToken(InstructionTextTokenType.RegisterToken, "".join(register)),
             InstructionTextToken(InstructionTextTokenType.OperandSeparatorToken, ", "),
             InstructionTextToken(InstructionTextTokenType.IntegerToken, hex(ea), ea)
         ], 4
@@ -156,65 +112,41 @@ class LD(ABSFormPass):
     @staticmethod
     def get_instruction_low_level_il(data, addr, il):
 
-        try:
-            _, _, a, ea, r, u, l, q = LD.decode(data)
-        except ValueError as exc:
-            log_warn(f"Detected LD instruction but failed to decode: 0x{addr:x}")
-            return None
-        
-        if a < 0 or a >= 16:
-            log_warn(f"Detected LD instruction but invalid register selection: 0x{addr:x}, {a}")
-            return None
-
-        if r == 'd':
-            left = f"d{a}"
-        elif r == 'a':
-            left = f"a{a}"
-        elif r == 'e':
-            b = a >> 1 << 1
-            left = f"d{b}d{b+1}"
-        elif r == 'p':
-            left = f"a{b}a{a+1}"
-        else:
-            log_warn(f"Detected LD instruction but invalid register selection: 0x{addr:x}")
+        mnemonic, register, length, signed, upper, ea = LD.decode(data)
+        if None in (mnemonic, register, length):
             return None
 
         right = il.const_pointer(il.arch.address_size, ea)
 
-        if q == 1:
+        if upper == 1:
             right = il.load(2, right) # l = 2
             right = il.shift_left(4, right, 0x10)
             right = il.and_expr(4, right, il.const(4, 0xffff0000))
-            il.append(il.set_reg(4, left, right))
+            il.append(il.set_reg(4, register[0], right))
             return 4
 
-        elif l in (1, 2, 4):
-            right = il.load(l, right)
-            if l <= 2:
-                if u == 0:
+        elif length in (1, 2, 4):
+            right = il.load(length, right)
+            if length <= 2:
+                if signed:
                     right = il.sign_extend(il.arch.address_size, right)
                 else:
                     right = il.zero_extend(il.arch.address_size, right)
-            il.append(il.set_reg(4, left, right))
+            il.append(il.set_reg(4, register[0], right))
             return 4
 
-        elif l == 8:
-            b = a >> 1 << 1
-            n = "d" if r == 'e' else "a"
+        elif length == 8:
             right = il.load(8, right)
-            il.append(il.set_reg_split(4, f"{n}{b+1}", f"{n}{b}", right))
+            il.append(il.set_reg_split(4, register[1], register[0], right))
             return 4
 
-        log_warn(f"Detected LD instruction but invalid load length: 0x{addr:x}")
-        return None
 
-
-class ST(ABSFormPass):
+class ST(ABSForm):
 
     @staticmethod
     def decode(data: bytes):
 
-        o, x, a, ea = ABSFormPass.decode(data)
+        o, x, a, ea = ABSForm.decode(data)
         b = a >> 1 << 1
 
         mnemonic = None
@@ -255,18 +187,13 @@ class ST(ABSFormPass):
                 register = (f"a{b}", f"a{b+1}")
                 length = 8
 
-        if None in (mnemonic, register, length):
-            raise ValueError(f"Failed to decode instruction")
-
         return mnemonic, register, length, upper, ea
 
     @staticmethod
     def get_instruction_text(data, addr):
 
-        try:
-            mnemonic, register, length, upper, ea = ST.decode(data)
-        except ValueError:
-            log_warn(f"Detected ST instruction but failed to decode: 0x{addr:x}")
+        mnemonic, register, length, upper, ea = ST.decode(data)
+        if None in (mnemonic, register, length):
             return None
         
         return [
@@ -280,10 +207,8 @@ class ST(ABSFormPass):
     @staticmethod
     def get_instruction_low_level_il(data, addr, il):
 
-        try:
-            mnemonic, register, length, upper, ea = ST.decode(data)
-        except ValueError:
-            log_warn(f"Detected ST instruction but failed to decode: 0x{addr:x}")
+        mnemonic, register, length, upper, ea = ST.decode(data)
+        if None in (mnemonic, register, length):
             return None
         
         if upper:
@@ -300,17 +225,11 @@ class ST(ABSFormPass):
         return 4
 
 
-class SWAP(ABSFormPass):
+class SWAP(ABSForm):
 
     @staticmethod
     def get_instruction_text(data, addr):
-
-        try:
-            o, x, a, ea = SWAP.decode(data)
-        except ValueError as exc:
-            log_warn(f"Detected SWAP instruction but failed to decode: 0x{addr:x}")
-            return None
-        
+        o, x, a, ea = SWAP.decode(data)
         if o == 0xE5 and x == 0x00:
             return [
                 InstructionTextToken(InstructionTextTokenType.InstructionToken, "swap.w"),
@@ -322,13 +241,7 @@ class SWAP(ABSFormPass):
 
     @staticmethod
     def get_instruction_low_level_il(data, addr, il):
-
-        try:
-            o, x, a, ea = SWAP.decode(data)
-        except ValueError as exc:
-            log_warn(f"Detected SWAP instruction but failed to decode: 0x{addr:x}")
-            return None
-    
+        o, x, a, ea = SWAP.decode(data)
         if o == 0xE5 and x == 0x00:
             right = il.const_pointer(4, ea)
             right = il.load(4, right)
@@ -338,51 +251,5 @@ class SWAP(ABSFormPass):
             return 4
 
 
-# TODO
-class STLDCX(ABSFormPass):
+class STLDCX(ABSForm):
     pass
-
-
-class AbsoluteAddressingHook(ArchitectureHook):
-
-    table = {
-        # OPCODE      |    X=0 |    X=1 |    X=2 |    X=3
-        0x05: LD,     #  LD_BD | LD_BUD |  LD_HD | LD_HUD
-        0x15: STLDCX, #  STLCX |  STUCX |  LDLCX |  LDUCX
-        0x25: ST,     #   ST_B |      - |   ST_H |      -
-        0x45: LD,     #  LD_QD |      - |      - |      -
-        0x65: ST,     #   ST_Q |      - |      - |      -
-        0x85: LD,     #  LD_WD |  LD_DE |   LD_A | LD_DAP
-        0xA5: ST,     #   ST_W |   ST_D |   ST_A |  ST_DA
-        0xC5: LEA,    #    LEA |      - |      - |      -
-        0xE5: SWAP,   # SWAP_W |  LDMST |      - |      -
-    }
-
-    def dispatch(self, data: bytes) -> Pass | None:
-        inst = int.from_bytes(data, 'little')
-        special_opcode = inst & 0b111111
-        if special_opcode not in [0x10, 0x6F]:
-            opcode = inst & 0b11111111
-            if opcode in self.table:
-                return self.table[opcode]
-
-    def get_instruction_info(self, data: bytes, addr: int) -> InstructionInfo | None:
-        return super().get_instruction_info(data, addr)
-
-    def get_instruction_text(self, data: bytes, addr: int) -> tuple[list[InstructionTextToken], int] | None:
-        passed = None
-        original = super().get_instruction_text(data, addr)
-        if (ps := self.dispatch(data)):
-            passed = ps.get_instruction_text(data, addr)
-            if passed and original:
-                if passed[0][0].text != original[0][0].text:
-                    log_warn(f"mnemonic changed during disassembly: 0x{addr:x}, '{original[0][0].text}' != '{passed[0][0].text}'")
-                    passed = None
-        return passed if passed else original
-
-    def get_instruction_low_level_il(self, data: bytes, addr: int, il: LowLevelILFunction) -> int:
-        if (ps := self.dispatch(data)):
-            if (ret := ps.get_instruction_low_level_il(data, addr, il)):
-                return ret
-            log_warn(f"Failed to fix absolute addressing: 0x{addr:x}")
-        return super().get_instruction_low_level_il(data, addr, il)
