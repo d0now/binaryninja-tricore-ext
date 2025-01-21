@@ -129,6 +129,7 @@ class LD(ABSFormPass):
         elif l == 8:
             mnemonic += ".e" if r == 'e' else ".dap"
         else:
+            log_warn(f"Detected LD instruction but failed to fetch mnemonic: 0x{addr:x}")
             return None
 
         if r == 'd':
@@ -141,6 +142,7 @@ class LD(ABSFormPass):
         elif r == 'p':
             reg = f"a{b}a{a+1}"
         else:
+            log_warn(f"Detected LD instruction but failed to fetch operand: 0x{addr:x}")
             return None
 
         return [
@@ -174,15 +176,18 @@ class LD(ABSFormPass):
         elif r == 'p':
             left = f"a{b}a{a+1}"
         else:
+            log_warn(f"Detected LD instruction but invalid register selection: 0x{addr:x}")
             return None
 
         right = il.const_pointer(il.arch.address_size, ea)
+
         if q == 1:
             right = il.load(2, right) # l = 2
             right = il.shift_left(4, right, 0x10)
             right = il.and_expr(4, right, il.const(4, 0xffff0000))
             il.append(il.set_reg(4, left, right))
             return 4
+
         elif l in (1, 2, 4):
             right = il.load(l, right)
             if l <= 2:
@@ -192,14 +197,16 @@ class LD(ABSFormPass):
                     right = il.zero_extend(il.arch.address_size, right)
             il.append(il.set_reg(4, left, right))
             return 4
+
         elif l == 8:
             b = a >> 1 << 1
             n = "d" if r == 'e' else "a"
             right = il.load(8, right)
             il.append(il.set_reg_split(4, f"{n}{b+1}", f"{n}{b}", right))
             return 4
-        else:
-            return None
+
+        log_warn(f"Detected LD instruction but invalid load length: 0x{addr:x}")
+        return None
 
 
 class ST(ABSFormPass):
@@ -217,15 +224,16 @@ class SWAP(ABSFormPass):
 class AbsoluteAddressingHook(ArchitectureHook):
 
     table = {
-        0x05: LD, #(LD_BD, LD_BUD, LD_HD, LD_HUD),
-        0x15: STLDCX, #(STLCX, STUCX, LDLCX, LDUCX),
-        0x25: ST, #(ST_B, None, ST_H, None),
-        0x45: LD, #(LD_QD, None, None, None),
-        0x65: ST, #(ST_Q, None, None, None),
-        0x85: LD, #(LD_WD, LD_DE, LD_A, LD_DAP),
-        0xA5: ST, #(ST_W, ST_D, ST_A, ST_DA),
-        0xC5: LEA,
-        0xE5: SWAP, #(SWAP_W, LDMST, None, None),
+        # OPCODE      |    X=0 |    X=1 |    X=2 |    X=3
+        0x05: LD,     #  LD_BD | LD_BUD |  LD_HD | LD_HUD
+        0x15: STLDCX, #  STLCX |  STUCX |  LDLCX |  LDUCX
+        0x25: ST,     #   ST_B |      - |   ST_H |      -
+        0x45: LD,     #  LD_QD |      - |      - |      -
+        0x65: ST,     #   ST_Q |      - |      - |      -
+        0x85: LD,     #  LD_WD |  LD_DE |   LD_A | LD_DAP
+        0xA5: ST,     #   ST_W |   ST_D |   ST_A |  ST_DA
+        0xC5: LEA,    #    LEA |      - |      - |      -
+        0xE5: SWAP,   # SWAP_W |  LDMST |      - |      -
     }
 
     def dispatch(self, data: bytes) -> Pass | None:
@@ -250,14 +258,20 @@ class AbsoluteAddressingHook(ArchitectureHook):
                     passed = None
         return passed if passed else original
 
-        # ret = None
-        # if (ps := self.dispatch(data)):
-        #     ret = ps.get_instruction_text(data, addr)
-        # return ret if ret else super().get_instruction_text(data, addr)
-
     def get_instruction_low_level_il(self, data: bytes, addr: int, il: LowLevelILFunction) -> int:
-        ret = None
+
+        if not il.view.get_tag_type("TriCore Architecture Hook Affected"):
+            il.view.create_tag_type("TriCore Architecture Hook Affected", "✅")
+
+        if not il.view.get_tag_type("TriCore Architecture Hook Failed"):
+            il.view.create_tag_type("TriCore Architecture Hook Failed", "🚫")
+
         if (ps := self.dispatch(data)):
-            ret = ps.get_instruction_low_level_il(data, addr, il)
-        return ret if ret else super().get_instruction_low_level_il(data, addr, il)
+            if (ret := ps.get_instruction_low_level_il(data, addr, il)) == None:
+                il.view.add_tag(addr, "TriCore Architecture Hook Failed", "Absolute Addressing Fix", False)
+            else:
+                il.view.add_tag(addr, "TriCore Architecture Hook Affected", "Absolute Addressing Fix", False)
+                return ret
+
+        return super().get_instruction_low_level_il(data, addr, il)
 
