@@ -2,7 +2,7 @@ from abc import ABC
 
 from binaryninja.architecture import ArchitectureHook, InstructionInfo, InstructionTextToken
 from binaryninja.enums import InstructionTextTokenType
-from binaryninja.lowlevelil import LowLevelILFunction
+from binaryninja.lowlevelil import LowLevelILFunction, LLIL_TEMP
 from binaryninja.log import log_warn
 
 
@@ -300,11 +300,46 @@ class ST(ABSFormPass):
         return 4
 
 
-class STLDCX(ABSFormPass):
-    pass
-
-
 class SWAP(ABSFormPass):
+
+    @staticmethod
+    def get_instruction_text(data, addr):
+
+        try:
+            o, x, a, ea = SWAP.decode(data)
+        except ValueError as exc:
+            log_warn(f"Detected SWAP instruction but failed to decode: 0x{addr:x}")
+            return None
+        
+        if o == 0xE5 and x == 0x00:
+            return [
+                InstructionTextToken(InstructionTextTokenType.InstructionToken, "swap.w"),
+                InstructionTextToken(InstructionTextTokenType.TextToken, "  "),
+                InstructionTextToken(InstructionTextTokenType.RegisterToken, f"r{a}"),
+                InstructionTextToken(InstructionTextTokenType.OperandSeparatorToken, ", "),
+                InstructionTextToken(InstructionTextTokenType.IntegerToken, hex(ea), ea)
+            ], 4
+
+    @staticmethod
+    def get_instruction_low_level_il(data, addr, il):
+
+        try:
+            o, x, a, ea = SWAP.decode(data)
+        except ValueError as exc:
+            log_warn(f"Detected SWAP instruction but failed to decode: 0x{addr:x}")
+            return None
+    
+        if o == 0xE5 and x == 0x00:
+            right = il.const_pointer(4, ea)
+            right = il.load(4, right)
+            il.append(il.set_reg(4, LLIL_TEMP(0), right))
+            il.append(il.store(4, il.const_pointer(4, ea), il.reg(4, a)))
+            il.append(il.set_reg(4, il.reg(4, a), il.reg(4, LLIL_TEMP(0))))
+            return 4
+
+
+# TODO
+class STLDCX(ABSFormPass):
     pass
 
 
