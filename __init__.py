@@ -6,7 +6,7 @@ from binaryninja.log import log_warn
 
 from .tcext.instruction import Instruction
 from .tcext.absolute_addressing import LEA, LD, ST, SWAP, STLDCX
-from .tcext.absolute_branch import CALLA
+from .tcext.absolute_branch import CALLA, JA
 
 
 class TriCoreExtHook(ArchitectureHook):
@@ -18,6 +18,7 @@ class TriCoreExtHook(ArchitectureHook):
         0x45: LD,
         0x65: ST,
         0x85: LD,
+        0x9D: JA,
         0xA5: ST,
         0xC5: LEA,
         0xE5: SWAP,

@@ -13,10 +13,9 @@ def bits(_data: int | bytes, length: int, start: int, end: int) -> int:
     return (inst >> start) & ((1 << (end - start)) - 1)
 
 
-class CALLA(Instruction):
-
+class BForm(Instruction):
     @staticmethod
-    def decode_calla(data: bytes) -> int:
+    def decode(data: bytes):
         opcode = bits(data, 4, 0, 8)
         disp24_16_23 = bits(data, 4, 8, 16)
         disp24_0_15 = bits(data, 4, 16, 32)
@@ -26,19 +25,21 @@ class CALLA(Instruction):
         pc = pc_1_21 << 1 | pc_28_32 << 28
         return opcode, pc
 
-    @classmethod
-    def get_instruction_info(cls, data: bytes, addr: int) -> InstructionInfo | None:
-        opcode, pc = CALLA.decode_calla(data)
+
+class CALLA(BForm):
+
+    @staticmethod
+    def get_instruction_info(data: bytes, addr: int) -> InstructionInfo | None:
+        opcode, pc = CALLA.decode(data)
         if opcode == 0xED:
             info = InstructionInfo()
             info.length = 4
             info.add_branch(BranchType.CallDestination, pc)
             return info
 
-    @classmethod
-    def get_instruction_text(cls, data: bytes, addr: int) -> tuple[list[InstructionTextToken], int] | None:
-
-        opcode, pc = CALLA.decode_calla(data)
+    @staticmethod
+    def get_instruction_text(data: bytes, addr: int) -> tuple[list[InstructionTextToken], int] | None:
+        opcode, pc = CALLA.decode(data)
         if opcode == 0xED:
             return [
                 InstructionTextToken(InstructionTextTokenType.InstructionToken, "calla"),
@@ -46,13 +47,42 @@ class CALLA(Instruction):
                 InstructionTextToken(InstructionTextTokenType.IntegerToken, hex(pc), pc)
             ], 4
 
-    @classmethod
-    def get_instruction_low_level_il(cls, data: bytes, addr: int, il: LowLevelILFunction) -> int | None:
-        opcode, pc = CALLA.decode_calla(data)
+    @staticmethod
+    def get_instruction_low_level_il(data: bytes, addr: int, il: LowLevelILFunction) -> int | None:
+        opcode, pc = CALLA.decode(data)
         if opcode == 0xED:
             temp_start = il.temp_reg_count
             ctx = ["a10", "a11", "a12", "a13", "a14", "a15", "d8", "d9", "d10", "d11", "d12", "d13", "d14", "d15"]
             for i, r in enumerate(ctx): il.append(il.set_reg(4, LLIL_TEMP(temp_start + i), il.reg(4, r)))
-            il.append(il.call(il.const(4, pc)))
+            il.append(il.call(il.const_pointer(4, pc)))
             for i, r in enumerate(ctx): il.append(il.set_reg(4, r, il.reg(4, LLIL_TEMP(temp_start + i))))
+            return 4
+
+
+class JA(BForm):
+
+    @staticmethod
+    def get_instruction_info(data: bytes, addr: int) -> InstructionInfo | None:
+        opcode, pc = JA.decode(data)
+        if opcode == 0x9D:
+            info = InstructionInfo()
+            info.length = 4
+            info.add_branch(BranchType.UnconditionalBranch, pc)
+            return info
+
+    @staticmethod
+    def get_instruction_text(data: bytes, addr: int) -> InstructionInfo | None:
+        opcode, pc = JA.decode(data)
+        if opcode == 0x9D:
+            return [
+                InstructionTextToken(InstructionTextTokenType.InstructionToken, "ja"),
+                InstructionTextToken(InstructionTextTokenType.TextToken, "      "),
+                InstructionTextToken(InstructionTextTokenType.IntegerToken, hex(pc), pc),
+            ], 4
+
+    @staticmethod
+    def get_instruction_low_level_il(data: bytes, addr: int, il: LowLevelILFunction) -> int:
+        opcode, pc = JA.decode(data)
+        if opcode == 0x9D:
+            il.append(il.jump(il.const_pointer(4, pc)))
             return 4
