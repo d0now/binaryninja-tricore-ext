@@ -210,7 +210,94 @@ class LD(ABSFormPass):
 
 
 class ST(ABSFormPass):
-    pass
+
+    @staticmethod
+    def decode(data: bytes):
+
+        o, x, a, ea = ABSFormPass.decode(data)
+        b = a >> 1 << 1
+
+        mnemonic = None
+        register = None
+        length = None
+        upper = False
+
+        if o == 0x25:
+            if x == 0:
+                mnemonic = "st.b"
+                register = (f"d{a}", )
+                length = 1
+            elif x == 2:
+                mnemonic = "st.h"
+                register = (f"d{a}", )
+                length = 2
+        elif o == 0x65:
+            if x == 0:
+                mnemonic = "st.q"
+                register = (f"d{a}", )
+                length = 2
+                upper = True
+        elif o == 0xa5:
+            if x == 0:
+                mnemonic = "st.w"
+                register = (f"d{a}", )
+                length = 4
+            elif x == 1:
+                mnemonic = "st.d"
+                register = (f"d{b}", f"d{b+1}")
+                length = 8
+            elif x == 2:
+                mnemonic = "st.a"
+                register = (f"a{a}", )
+                length = 4
+            elif x == 3:
+                mnemonic = "st.da"
+                register = (f"a{b}", f"a{b+1}")
+                length = 8
+
+        if None in (mnemonic, register, length):
+            raise ValueError(f"Failed to decode instruction")
+
+        return mnemonic, register, length, upper, ea
+
+    @staticmethod
+    def get_instruction_text(data, addr):
+
+        try:
+            mnemonic, register, length, upper, ea = ST.decode(data)
+        except ValueError:
+            log_warn(f"Detected ST instruction but failed to decode: 0x{addr:x}")
+            return None
+        
+        return [
+            InstructionTextToken(InstructionTextTokenType.InstructionToken, mnemonic),
+            InstructionTextToken(InstructionTextTokenType.TextToken, " " * (8 - len(mnemonic))),
+            InstructionTextToken(InstructionTextTokenType.RegisterToken, "".join(register)),
+            InstructionTextToken(InstructionTextTokenType.OperandSeparatorToken, ", "),
+            InstructionTextToken(InstructionTextTokenType.IntegerToken, hex(ea), ea),
+        ], 4
+    
+    @staticmethod
+    def get_instruction_low_level_il(data, addr, il):
+
+        try:
+            mnemonic, register, length, upper, ea = ST.decode(data)
+        except ValueError:
+            log_warn(f"Detected ST instruction but failed to decode: 0x{addr:x}")
+            return None
+        
+        if upper:
+            right = il.logical_shift_right(4, il.reg(4, register[0]), 0x10)
+            il.append(il.store(2, il.const_pointer(4, ea), right))
+        elif len(register) == 1:
+            il.append(il.store(length, il.const_pointer(4, ea), il.reg(length, register[0])))
+        elif len(register) == 2:
+            il.append(il.store(4, il.const_pointer(4, ea+0), il.reg(4, register[1])))
+            il.append(il.store(4, il.const_pointer(4, ea+4), il.reg(4, register[0])))
+        else:
+            raise ValueError
+        
+        return 4
 
 
 class STLDCX(ABSFormPass):
@@ -259,19 +346,8 @@ class AbsoluteAddressingHook(ArchitectureHook):
         return passed if passed else original
 
     def get_instruction_low_level_il(self, data: bytes, addr: int, il: LowLevelILFunction) -> int:
-
-        if not il.view.get_tag_type("TriCore Architecture Hook Affected"):
-            il.view.create_tag_type("TriCore Architecture Hook Affected", "✅")
-
-        if not il.view.get_tag_type("TriCore Architecture Hook Failed"):
-            il.view.create_tag_type("TriCore Architecture Hook Failed", "🚫")
-
         if (ps := self.dispatch(data)):
-            if (ret := ps.get_instruction_low_level_il(data, addr, il)) == None:
-                il.view.add_tag(addr, "TriCore Architecture Hook Failed", "Absolute Addressing Fix", False)
-            else:
-                il.view.add_tag(addr, "TriCore Architecture Hook Affected", "Absolute Addressing Fix", False)
+            if (ret := ps.get_instruction_low_level_il(data, addr, il)):
                 return ret
-
+            log_warn(f"Failed to fix absolute addressing: 0x{addr:x}")
         return super().get_instruction_low_level_il(data, addr, il)
-
