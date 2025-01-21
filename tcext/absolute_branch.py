@@ -59,6 +59,35 @@ class CALLA(BForm):
             return 4
 
 
+class FCALLA(BForm):
+
+    @staticmethod
+    def get_instruction_info(data: bytes, addr: int) -> InstructionInfo | None:
+        opcode, pc = FCALLA.decode(data)
+        if opcode == 0xE1:
+            info = InstructionInfo()
+            info.length = 4
+            info.add_branch(BranchType.CallDestination, pc)
+            return info
+
+    @staticmethod
+    def get_instruction_text(data: bytes, addr: int) -> tuple[list[InstructionTextToken], int] | None:
+        opcode, pc = FCALLA.decode(data)
+        if opcode == 0xE1:
+            return [
+                InstructionTextToken(InstructionTextTokenType.InstructionToken, "fcalla"),
+                InstructionTextToken(InstructionTextTokenType.TextToken, "  "),
+                InstructionTextToken(InstructionTextTokenType.IntegerToken, hex(pc), pc)
+            ], 4
+
+    @staticmethod
+    def get_instruction_low_level_il(data: bytes, addr: int, il: LowLevelILFunction) -> int | None:
+        opcode, pc = FCALLA.decode(data)
+        if opcode == 0xE1:
+            il.append(il.call(il.const_pointer(4, pc)))
+            return 4
+
+
 class JA(BForm):
 
     @staticmethod
