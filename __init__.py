@@ -23,7 +23,7 @@ class TriCoreExtHook(ArchitectureHook):
         0xC5: LEA,
         0xE1: FCALLA,
         0xE5: SWAP,
-        0xED: CALLA,
+        # 0xED: CALLA,
     }
 
     def dispatch(self, data: bytes) -> type[Instruction] | None:

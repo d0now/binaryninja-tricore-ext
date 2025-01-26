@@ -93,7 +93,7 @@ class LD(ABSForm):
                 mnemonic += "p"
 
         return mnemonic, register, length, signed, upper, ea
-    
+
     @staticmethod
     def get_instruction_text(data, addr):
 
