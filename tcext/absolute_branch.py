@@ -3,6 +3,7 @@ from binaryninja.lowlevelil import LowLevelILFunction, LLIL_TEMP
 from binaryninja.enums import InstructionTextTokenType, BranchType
 
 from .instruction import Instruction
+from .format import BForm
 
 
 def bits(_data: int | bytes, length: int, start: int, end: int) -> int:
@@ -11,19 +12,6 @@ def bits(_data: int | bytes, length: int, start: int, end: int) -> int:
     else:
         inst = _data & ((1 << (length * 8)) - 1)
     return (inst >> start) & ((1 << (end - start)) - 1)
-
-
-class BForm(Instruction):
-    @staticmethod
-    def decode(data: bytes):
-        opcode = bits(data, 4, 0, 8)
-        disp24_16_23 = bits(data, 4, 8, 16)
-        disp24_0_15 = bits(data, 4, 16, 32)
-        disp24 = disp24_16_23 << 16 | disp24_0_15
-        pc_1_21 = bits(disp24, 4, 0, 20)
-        pc_28_32 = bits(disp24, 4, 20, 24)
-        pc = pc_1_21 << 1 | pc_28_32 << 28
-        return opcode, pc
 
 
 class CALLA(BForm):

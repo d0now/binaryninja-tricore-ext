@@ -5,26 +5,13 @@ from binaryninja.enums import InstructionTextTokenType
 from binaryninja.lowlevelil import LowLevelILFunction, LLIL_TEMP
 
 from .instruction import Instruction
+from .format import ABSForm
 
 
 def bits(_data: bytes, length: int, start: int, end: int) -> int:
     data = _data[:length]
     inst = int.from_bytes(data, 'little')
     return (inst >> start) & ((1 << (end - start)) - 1)
-
-
-class ABSForm(Instruction):
-
-    @staticmethod
-    def decode(data: bytes) -> tuple[int]:
-        off18_0_5 = bits(data, 32, 16, 22)
-        off18_6_9 = bits(data, 32, 28, 32)
-        off18_10_13 = bits(data, 32, 22, 26)
-        off18_14_17 = bits(data, 32, 12, 16)
-        a = bits(data, 32, 8, 12)
-        o = bits(data, 32, 0, 8)
-        x = bits(data, 32, 26, 28)
-        return o, x, a, ((off18_0_5) | (off18_6_9 << 6) | (off18_10_13 << 10) | (off18_14_17 << 28)) & 0xffffffff
 
 
 class LEA(ABSForm):

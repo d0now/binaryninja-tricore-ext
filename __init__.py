@@ -6,6 +6,7 @@ from binaryninja.log import log_warn, log_error
 
 from .tcext.instruction import Instruction
 from .tcext.conditonal_move import CMOV_C, CMOV_R, CMOVN_C, CMOVN_R
+from .tcext.move import MOV_C8
 
 
 class TriCoreExtHook(ArchitectureHook):
@@ -14,7 +15,8 @@ class TriCoreExtHook(ArchitectureHook):
         0xAA: CMOV_C,
         0x2A: CMOV_R,
         0xEA: CMOVN_C,
-        0x6A: CMOVN_R
+        0x6A: CMOVN_R,
+        0xDA: MOV_C8,
     }
 
     def dispatch(self, data: bytes) -> type[Instruction] | None:

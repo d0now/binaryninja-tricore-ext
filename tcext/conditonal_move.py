@@ -1,25 +1,8 @@
 from .instruction import Instruction
+from .format import SRCForm, SRRForm
 from .utils import bits, sign_extend
 
 from binaryninja.lowlevelil import LowLevelILFunction, LowLevelILLabel
-
-
-class SRCForm(Instruction):
-    @staticmethod
-    def decode(data: bytes) -> tuple[int]:
-        op = bits(data, 16, 0, 8)
-        s1 = bits(data, 16, 8, 12)
-        const4 = bits(data, 16, 12, 16)
-        return op, s1, const4
-
-
-class SRRForm(Instruction):
-    @staticmethod
-    def decode(data: bytes) -> tuple[int]:
-        op = bits(data, 16, 0, 8)
-        s1 = bits(data, 16, 8, 12)
-        s2 = bits(data, 16, 12, 16)
-        return op, s1, s2
 
 
 class CMOV_C(SRCForm):
