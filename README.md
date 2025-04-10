@@ -1,8 +1,13 @@
 # Binary Ninja TriCore Workaround Architecture Hook
 
-- ~~Support for the "Absolute Addressing" instructions (LD, ST, SWAP, ...)~~
-- ~~Support for the "Absolute Target Branch" instructions (CALLA, JA, ...)~~
-- wrong LLIL implementation of `cmovn` instruction
+## ~~Support for the "Absolute Addressing" instructions (LD, ST, SWAP, ...)~~
+- [issue#6342](https://github.com/Vector35/binaryninja-api/issues/6342)
+
+## ~~Support for the "Absolute Target Branch" instructions (CALLA, JA, ...)~~
+- [issue#6342](https://github.com/Vector35/binaryninja-api/issues/6342)
+
+## Support for the "Conditional Move" (CMOV[N])
+- [issue#6617](https://github.com/Vector35/binaryninja-api/issues/6617)
 
 ## Notes
 
