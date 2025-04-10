@@ -2,28 +2,19 @@ from binaryninja.architecture import Architecture
 from binaryninja.architecture import Architecture, ArchitectureHook, InstructionInfo, InstructionTextToken
 from binaryninja.lowlevelil import LowLevelILFunction
 from binaryninja.plugin import PluginCommand
-from binaryninja.log import log_warn
+from binaryninja.log import log_warn, log_error
 
 from .tcext.instruction import Instruction
-from .tcext.absolute_addressing import LEA, LD, ST, SWAP, STLDCX
-from .tcext.absolute_branch import CALLA, FCALLA, JA
+from .tcext.conditonal_move import CMOV_C, CMOV_R, CMOVN_C, CMOVN_R
 
 
 class TriCoreExtHook(ArchitectureHook):
 
     table: dict[int, type[Instruction]] = {
-        0x05: LD,
-        0x15: STLDCX,
-        0x25: ST,
-        0x45: LD,
-        0x65: ST,
-        0x85: LD,
-        0x9D: JA,
-        0xA5: ST,
-        0xC5: LEA,
-        0xE1: FCALLA,
-        0xE5: SWAP,
-        # 0xED: CALLA,
+        0xAA: CMOV_C,
+        0x2A: CMOV_R,
+        0xEA: CMOVN_C,
+        0x6A: CMOVN_R
     }
 
     def dispatch(self, data: bytes) -> type[Instruction] | None:
@@ -57,10 +48,14 @@ class TriCoreExtHook(ArchitectureHook):
         return super().get_instruction_low_level_il(data, addr, il) if result == None else result
 
 
-# workaround for TriCore architecture not being recognized by Binary Ninja at plugin loading time
-# (maybe not a core architecture?)
-PluginCommand.register(
-    "TriCore Extension Architecture Hook",
-    "",
-    lambda _: TriCoreExtHook(Architecture['tricore']).register()
-)
+try:
+    TriCoreExtHook.register(Architecture['tricore'])
+except KeyError:
+    log_error("Failed to register TriCore Architecture Hook. try plugin command.")
+    # workaround for TriCore architecture not being recognized by Binary Ninja at plugin loading time
+    # (maybe not a core architecture?)
+    PluginCommand.register(
+        "TriCore Extension Architecture Hook",
+        "",
+        lambda _: TriCoreExtHook(Architecture['tricore']).register()
+    )

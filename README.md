@@ -1,13 +1,8 @@
 # Binary Ninja TriCore Workaround Architecture Hook
 
-## Features
-
-Binary Ninja TriCore has bunch of not-yet implemented instructions. So, I decided to make it by myself.
-
-- Support for the "Absolute Addressing" instructions (LD, ST, SWAP, ...)
-- Support for the "Absolute Target Branch" instructions (CALLA, JA, ...)
-- (TODO) Support for the "Fast Call" instructions
-- ...
+- ~~Support for the "Absolute Addressing" instructions (LD, ST, SWAP, ...)~~
+- ~~Support for the "Absolute Target Branch" instructions (CALLA, JA, ...)~~
+- wrong LLIL implementation of `cmovn` instruction
 
 ## Notes
 
